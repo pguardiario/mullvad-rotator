@@ -1,4 +1,4 @@
-# mullvad-gateway
+# mullvad-rotator
 
 One Mullvad WireGuard tunnel, one local HTTP proxy port, ~535 exit IPs in ~50
 countries, with rotating or sticky exits chosen per request by the username.
@@ -44,8 +44,9 @@ Contents:
 - Optional: Node.js 22+ on the host. Only used to register the WireGuard key,
   and section 4 shows a way to do it through Docker instead.
 
-You do **not** need the Mullvad app installed on the host. If it is installed
-and connected, that is fine too; the containers bring their own tunnel.
+The Mullvad app on the host is optional. It is handy for managing devices and
+listing relays (section 4 covers installing it), but the containers bring their
+own tunnel and do not use it. Having it installed and connected is fine.
 
 ---
 
@@ -192,8 +193,8 @@ docker compose version
 Replace `<REPO_URL>` with this repository's clone URL:
 
 ```bash
-git clone <REPO_URL> mullvad-gateway
-cd mullvad-gateway
+git clone <REPO_URL> mullvad-rotator
+cd mullvad-rotator
 ```
 
 All commands from here on run from this directory.
@@ -206,24 +207,85 @@ The tunnel needs a WireGuard key registered to your Mullvad account. Each key
 uses one of the account's 5 device slots, so register **one key per
 installation** and run this once.
 
-If you have the Mullvad app on this machine, you can see how many slots are
-used:
-
-```bash
-mullvad account list-devices
-```
-
 Do **not** reuse a key from another running tunnel (another machine, another
 container): two tunnels fighting over one key break each other.
 
-### Option A: script, with Node.js 22+ on the host
+### 4.1 Install the Mullvad app (optional, recommended)
+
+The app's `mullvad` command shows your account number, which device slots are
+used, and the full relay list with country and city codes. Skip this if you
+would rather type the account number by hand and manage devices on
+mullvad.net.
+
+Ubuntu / Debian:
+
+```bash
+sudo curl -fsSLo /usr/share/keyrings/mullvad-keyring.asc \
+  https://repository.mullvad.net/deb/mullvad-keyring.asc
+
+echo "deb [signed-by=/usr/share/keyrings/mullvad-keyring.asc \
+arch=$(dpkg --print-architecture)] \
+https://repository.mullvad.net/deb/stable stable main" \
+  | sudo tee /etc/apt/sources.list.d/mullvad.list
+
+sudo apt update
+sudo apt install -y mullvad-vpn
+```
+
+Fedora 41 and newer:
+
+```bash
+sudo dnf config-manager addrepo \
+  --from-repofile=https://repository.mullvad.net/rpm/stable/mullvad.repo
+sudo dnf install -y mullvad-vpn
+```
+
+Fedora 40 and earlier, RHEL, Rocky, Alma:
+
+```bash
+sudo dnf config-manager \
+  --add-repo https://repository.mullvad.net/rpm/stable/mullvad.repo
+sudo dnf install -y mullvad-vpn
+```
+
+Log in. **This registers the host itself as a device and uses a slot**, so
+with the app plus this stack you use two of your five:
+
+```bash
+mullvad account login YOUR_16_DIGIT_ACCOUNT_NUMBER
+```
+
+Check the account and the slots in use:
+
+```bash
+mullvad account get
+mullvad account list-devices
+```
+
+Logging in does not connect the VPN on the host. It is not needed for this
+stack, and you can leave the host disconnected (`mullvad disconnect`).
+
+### 4.2 Register a key for the stack
+
+Pick one option.
+
+#### Option A: script, with Node.js 22+ on the host
+
+If the Mullvad app is logged in (4.1), read the account number from it:
+
+```bash
+MULLVAD_ACCOUNT=$(mullvad account get | awk '/^Mullvad account:/ {print $3}') \
+  node scripts/register-key.mjs >> .env
+```
+
+Otherwise type it in:
 
 ```bash
 MULLVAD_ACCOUNT=YOUR_16_DIGIT_ACCOUNT_NUMBER \
   node scripts/register-key.mjs >> .env
 ```
 
-### Option B: script, through Docker (no Node needed)
+#### Option B: script, through Docker (no Node needed)
 
 ```bash
 docker run --rm \
@@ -243,7 +305,7 @@ WIREGUARD_ADDRESSES=10.x.x.x/32
 
 The account number is only read from the command line; it is not saved.
 
-### Option C: Mullvad website
+#### Option C: Mullvad website
 
 Log in at mullvad.net, open *WireGuard configuration*, click *Generate key*,
 pick any server and download the `.conf` file. From it, put `PrivateKey` into
