@@ -1,0 +1,21 @@
+{
+  "name": "mullvad-gateway",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p .",
+    "start": "node dist/server.js",
+    "probe": "node dist/probe.js"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "socks": "^2.8.10"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.1",
+    "typescript": "^7.0.2"
+  }
+}

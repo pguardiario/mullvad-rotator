@@ -1,0 +1,58 @@
+services:
+  vpn:
+    image: qmcgaw/gluetun:v3.41.3
+    container_name: mullvad-gw-vpn
+    restart: unless-stopped
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    environment:
+      VPN_SERVICE_PROVIDER: mullvad
+      VPN_TYPE: wireguard
+      WIREGUARD_PRIVATE_KEY: ${WIREGUARD_PRIVATE_KEY:?set WIREGUARD_PRIVATE_KEY in .env}
+      WIREGUARD_ADDRESSES: ${WIREGUARD_ADDRESSES:?set WIREGUARD_ADDRESSES in .env}
+      # Entry relay for the tunnel itself. Exits are chosen per request by the gateway.
+      SERVER_COUNTRIES: ${ENTRY_COUNTRY:-Sweden}
+      HTTPPROXY: "off"
+      SHADOWSOCKS: "off"
+      # Lets the published port reach the gateway listening inside this namespace.
+      FIREWALL_INPUT_PORTS: "8899"
+      # Leave FIREWALL_OUTBOUND_SUBNETS empty: anything listed there bypasses the
+      # tunnel, and Mullvad's 10.x socks range must go through it.
+      TZ: ${TZ:-UTC}
+    ports:
+      # Loopback only. For remote use, SSH-tunnel to this port (see README).
+      - "127.0.0.1:${PROXY_PORT:-8899}:8899"
+    networks:
+      - gw
+
+  gateway:
+    build: ./gateway
+    container_name: mullvad-gw-gateway
+    restart: unless-stopped
+    # Shares vpn's network namespace: every packet goes through the tunnel and
+    # gluetun's kill switch, and this container has no network if vpn is gone.
+    network_mode: "service:vpn"
+    depends_on:
+      vpn:
+        condition: service_healthy
+    environment:
+      PROXY_PASSWORD: ${PROXY_PASSWORD:?set PROXY_PASSWORD in .env}
+      PROXY_USER: ${PROXY_USER:-user}
+      STICKY_TTL_MIN: ${STICKY_TTL_MIN:-30}
+      RELAY_COOLDOWN_MIN: ${RELAY_COOLDOWN_MIN:-10}
+      HEALTHCHECK_INTERVAL_MIN: ${HEALTHCHECK_INTERVAL_MIN:-15}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    volumes:
+      - gateway-data:/data
+
+networks:
+  gw:
+    # Pinned to 172.x so it can never overlap Mullvad's 10.x internal ranges.
+    ipam:
+      config:
+        - subnet: 172.31.88.0/24
+
+volumes:
+  gateway-data:
