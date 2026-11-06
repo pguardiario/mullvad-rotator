@@ -50,6 +50,19 @@ export async function openUpstream(
   host: string,
   port: number,
 ): Promise<Upstream> {
+  if (route.relay !== undefined) {
+    // Pinned: that relay or nothing. Cooldowns are ignored, there is no retry elsewhere.
+    const relay = pool.find(route.relay);
+    try {
+      return { socket: await connectVia(pool, relay, host, port), relay };
+    } catch (err) {
+      if (err instanceof TargetError) throw err;
+      pool.markBad(relay, errMsg(err));
+      pool.forgetDns(relay);
+      throw new RelayError(`relay ${relay.socksName} failed: ${errMsg(err)}`);
+    }
+  }
+
   const key = route.sessionId !== undefined ? Sessions.key(route.filter, route.sessionId) : undefined;
   const tried = new Set<string>();
 

@@ -458,6 +458,7 @@ Keyed form:
 | `user_country_<cc>_<sid>`             | sticky within that country                   |
 | `user_country_<cc>_city_<city>`       | random relay in that city                    |
 | `user_country_<cc>_city_<city>_<sid>` | sticky within that city                      |
+| `user_relay_<name>`                   | pinned to that one relay, e.g. `user_relay_au-syd-wg-003` |
 
 Dash form:
 
@@ -485,11 +486,34 @@ Examples: `user_country_us_1`, `user_country_gb_city_lon_job7`, `user-de_abc`,
   `curl -v`).
 - **DNS** for the sites you visit is resolved by the exit relay, not locally.
 
+### One URL per exit
+
+`user_relay_<name>` always uses that relay: no session expiry, no cooldown
+skipping, no retry elsewhere (a dead relay gives a 502). The name is the
+relay's hostname (`au-syd-wg-003`) or socks name (`au-syd-wg-socks5-003`).
+`GET /relays` (same auth as `/status`) lists them all. To write every exit as
+a proxy URL, one per line:
+
+```bash
+node --env-file=.env scripts/proxy-list.mjs > mullvad-proxies.txt
+```
+
+`--country us` limits it to one country, `--host` changes the host in the
+URLs (default `localhost`). Without Node on the host:
+
+```bash
+docker run --rm --network host --env-file .env \
+  -v "$PWD/scripts:/scripts:ro" \
+  node:24-alpine node /scripts/proxy-list.mjs > mullvad-proxies.txt
+```
+
+The file contains the proxy password and is gitignored.
+
 ### Errors
 
 | status | meaning                                                        |
 |--------|----------------------------------------------------------------|
-| 400    | bad username format, or unknown country/city code              |
+| 400    | bad username format, or unknown country/city/relay             |
 | 407    | wrong or missing password                                      |
 | 502    | relay unreachable after one retry, or target refused/unknown   |
 | 503    | relay list not loaded yet (first seconds after a cold start)   |

@@ -1,4 +1,5 @@
 .env
+/mullvad-proxies.txt
 node_modules/
 dist/
 /tmp_*

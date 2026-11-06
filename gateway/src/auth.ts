@@ -5,6 +5,8 @@ import type { Filter } from './relays.js';
 export interface Route {
   filter: Filter;
   sessionId?: string;
+  /** Pinned to one exact relay (user_relay_<name>); no rotation, no fallback. */
+  relay?: string;
 }
 
 export type AuthResult =
@@ -14,6 +16,7 @@ export type AuthResult =
 
 const CODE = /^[a-z]{2,4}$/;
 const SESSION = /^[A-Za-z0-9.-]{1,64}$/;
+const RELAY = /^[a-z0-9-]{1,64}$/;
 
 function sameSecret(a: string, b: string): boolean {
   // Hash first so lengths match and the comparison is constant-time.
@@ -56,8 +59,18 @@ function parseKeyed(parts: string[]): Route | string {
   return validRoute(country, city, rest[0]);
 }
 
+/** Pinned form: user_relay_<name>, e.g. user_relay_au-syd-wg-003. */
+function parseRelay(parts: string[]): Route | string {
+  if (parts[0] !== config.userPrefix) return `username must start with "${config.userPrefix}"`;
+  if (parts.length !== 3) return 'expected user_relay_<relay name>, e.g. user_relay_au-syd-wg-003';
+  const name = parts[2].toLowerCase();
+  if (!RELAY.test(name)) return `invalid relay name "${parts[2]}"`;
+  return { filter: {}, relay: name };
+}
+
 /**
  * Username grammar:
+ *   user_relay_<name>                     pinned to one exact relay
  *   user                                  rotating, any relay
  *   user_<sid>                            sticky
  *   user-<cc>[-<city>]                    rotating within country/city
@@ -67,6 +80,7 @@ function parseKeyed(parts: string[]): Route | string {
  */
 export function parseUsername(username: string): Route | string {
   const parts = username.split('_');
+  if (parts.length >= 3 && parts[1] === 'relay') return parseRelay(parts);
   if (parts.length >= 3 && (parts[1] === 'country' || parts[1] === 'city')) return parseKeyed(parts);
 
   const us = username.indexOf('_');

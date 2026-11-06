@@ -51,6 +51,7 @@ function failure(err: unknown): { status: number; message: string } {
 }
 
 function routeLabel(route: Route): Record<string, unknown> {
+  if (route.relay !== undefined) return { pinned: route.relay };
   return { filter: filterLabel(route.filter), session: route.sessionId ?? null };
 }
 
@@ -153,24 +154,29 @@ function handleLocal(req: IncomingMessage, res: ServerResponse): void {
     textReply(res, pool.size > 0 ? 200 : 503, pool.size > 0 ? 'ok' : 'no relays loaded');
     return;
   }
-  if (path === '/status') {
-    const auth = checkAuth(req.headers['authorization'] ?? req.headers['proxy-authorization']);
-    // A bad username format is still the right password, which is all /status needs.
-    if (!auth.ok && auth.status === 407) {
-      textReply(res, 401, 'unauthorized', { 'www-authenticate': 'Basic realm="mullvad-gateway"' });
-      return;
-    }
-    const body = {
-      uptimeSec: Math.round((Date.now() - startedAt) / 1000),
-      activeSessions: sessions.size,
-      openTunnels,
-      ...pool.status(),
-    };
-    res.writeHead(200, { 'content-type': 'application/json' });
-    res.end(JSON.stringify(body, null, 2) + '\n');
+  if (path !== '/status' && path !== '/relays') {
+    textReply(res, 404, 'not found (this is a proxy; local paths are /status, /relays and /healthz)');
     return;
   }
-  textReply(res, 404, 'not found (this is a proxy; local paths are /status and /healthz)');
+  const auth = checkAuth(req.headers['authorization'] ?? req.headers['proxy-authorization']);
+  // A bad username format is still the right password, which is all these need.
+  if (!auth.ok && auth.status === 407) {
+    textReply(res, 401, 'unauthorized', { 'www-authenticate': 'Basic realm="mullvad-gateway"' });
+    return;
+  }
+  if (path === '/relays') {
+    res.writeHead(pool.size > 0 ? 200 : 503, { 'content-type': 'application/json' });
+    res.end(JSON.stringify(pool.list(), null, 2) + '\n');
+    return;
+  }
+  const body = {
+    uptimeSec: Math.round((Date.now() - startedAt) / 1000),
+    activeSessions: sessions.size,
+    openTunnels,
+    ...pool.status(),
+  };
+  res.writeHead(200, { 'content-type': 'application/json' });
+  res.end(JSON.stringify(body, null, 2) + '\n');
 }
 
 async function handleHttp(req: IncomingMessage, res: ServerResponse): Promise<void> {

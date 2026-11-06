@@ -51,6 +51,8 @@ function shuffle<T>(arr: T[]): T[] {
 export class RelayPool {
   private relays: Relay[] = [];
   private byName = new Map<string, Relay>();
+  /** Short names accepted by user_relay_<name>: hostname and socks name, without domain. */
+  private byAlias = new Map<string, Relay>();
   private badUntil = new Map<string, number>();
   private lastExit = new Map<string, { ip: string; country?: string; city?: string; at: string }>();
   private dnsCache = new Map<string, { ip: string; expires: number }>();
@@ -132,6 +134,11 @@ export class RelayPool {
   private set(relays: Relay[], source: 'api' | 'cache'): void {
     this.relays = relays;
     this.byName = new Map(relays.map((r) => [r.socksName, r]));
+    this.byAlias = new Map();
+    for (const r of relays) {
+      this.byAlias.set(r.socksName.split('.')[0].toLowerCase(), r);
+      this.byAlias.set(r.hostname.split('.')[0].toLowerCase(), r);
+    }
     this.loadedAt = new Date();
     this.source = source;
   }
@@ -178,6 +185,30 @@ export class RelayPool {
       }
     }
     return list;
+  }
+
+  /** The relay a user_relay_<name> username pins to. Throws FilterError if unknown. */
+  find(name: string): Relay {
+    if (this.relays.length === 0) throw new Error('relay list not loaded yet');
+    const r = this.byAlias.get(name);
+    if (!r) throw new FilterError(`unknown relay "${name}" (GET /relays lists them)`);
+    return r;
+  }
+
+  /** Every relay, sorted by country, city, name. Served at /relays. */
+  list() {
+    const now = Date.now();
+    return this.relays
+      .map((r) => ({
+        name: r.hostname.split('.')[0].toLowerCase(),
+        socks: r.socksName,
+        country: r.countryCode,
+        countryName: r.countryName,
+        city: r.cityCode,
+        cityName: r.cityName,
+        healthy: this.isHealthy(r, now),
+      }))
+      .sort((a, b) => a.country.localeCompare(b.country) || a.city.localeCompare(b.city) || a.name.localeCompare(b.name));
   }
 
   isHealthy(r: Relay, now = Date.now()): boolean {
